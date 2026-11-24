@@ -1,0 +1,3 @@
+// ---- SaludCerca: mapa y búsqueda (pegar al FINAL de routes/web.php) ----
+Route::get('/mapa', [\App\Http\Controllers\MapaController::class, 'index'])->name('mapa');
+Route::get('/api/establecimientos', [\App\Http\Controllers\MapaController::class, 'buscar'])->name('api.establecimientos');
