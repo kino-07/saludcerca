@@ -13,12 +13,28 @@ class CiudadanoController extends Controller
     // Mi espacio: favoritos + reportes enviados
     public function index()
     {
-        $favoritos = Favorito::with('establecimiento')
-            ->where('user_id', auth()->id())->latest()->get();
-        $reportes = Reporte::with('establecimiento')
-            ->where('user_id', auth()->id())->latest()->get();
+        $ordenFav = request('orden_fav', 'reciente');
+        $ordenRep = request('orden_rep', 'reciente');
 
-        return view('ciudadano.index', compact('favoritos', 'reportes'));
+        $favoritos = Favorito::with('establecimiento')->where('user_id', auth()->id())->get();
+        $favoritos = match ($ordenFav) {
+            'antiguo' => $favoritos->sortBy('created_at'),
+            'az' => $favoritos->sortBy(fn ($f) => mb_strtolower($f->establecimiento->nombre)),
+            'za' => $favoritos->sortByDesc(fn ($f) => mb_strtolower($f->establecimiento->nombre)),
+            default => $favoritos->sortByDesc('created_at'),
+        };
+
+        $reportes = Reporte::with('establecimiento')->where('user_id', auth()->id())->get();
+        $reportes = match ($ordenRep) {
+            'antiguo' => $reportes->sortBy('created_at'),
+            'estado' => $reportes->sortBy([['estado', 'asc'], ['created_at', 'desc']]),
+            default => $reportes->sortByDesc('created_at'),
+        };
+
+        return view('ciudadano.index', [
+            'favoritos' => $favoritos->values(), 'reportes' => $reportes->values(),
+            'ordenFav' => $ordenFav, 'ordenRep' => $ordenRep,
+        ]);
     }
 
     // Agrega o quita de favoritos

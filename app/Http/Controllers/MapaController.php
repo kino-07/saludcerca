@@ -21,7 +21,7 @@ class MapaController extends Controller
         $lng = (float) $request->input('lng', -63.1821);
 
         $query = Establecimiento::activos()
-            ->with(['horarios', 'turnos', 'servicios'])
+            ->with(['horarios', 'turnos', 'servicios', 'fotos'])
             ->cercanos($lat, $lng);
 
         if ($request->filled('q')) {
@@ -50,6 +50,7 @@ class MapaController extends Controller
             'abierto' => $e->estaAbiertoAhora(),
             'de_turno' => $e->tipo === 'farmacia' && $e->estaDeTurno(),
             'servicios' => $e->servicios->pluck('nombre'),
+            'foto' => $e->fotos->first() ? asset('storage/' . $e->fotos->first()->ruta) : null,
         ]);
 
         // Estos filtros se calculan con la hora actual, por eso se aplican aquí

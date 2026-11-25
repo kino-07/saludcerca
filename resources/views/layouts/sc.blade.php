@@ -9,19 +9,7 @@
     <style> .selmap { height: 300px; border-radius: .5rem; } </style>
 </head>
 <body class="bg-light">
-<nav class="navbar navbar-dark bg-success mb-3">
-    <div class="container">
-        <a class="navbar-brand" href="{{ url('/mapa') }}">SaludCerca</a>
-        <div class="d-flex gap-2 align-items-center">
-            <span class="text-white small">{{ auth()->user()->name ?? '' }} ({{ auth()->user()->rol ?? '' }})</span>
-            <a class="btn btn-outline-light btn-sm" href="{{ url('/mapa') }}">Mapa</a>
-            <form method="POST" action="{{ route('logout') }}" class="m-0">
-                @csrf
-                <button class="btn btn-light btn-sm">Salir</button>
-            </form>
-        </div>
-    </div>
-</nav>
+@include('partials.navbar')
 <div class="container pb-4">
     @if (session('ok'))
         <div class="alert alert-success">{{ session('ok') }}</div>

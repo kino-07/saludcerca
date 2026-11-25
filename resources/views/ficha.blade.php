@@ -9,12 +9,7 @@
     <style> #mini { height: 280px; border-radius: .5rem; } </style>
 </head>
 <body class="bg-light">
-<nav class="navbar navbar-dark bg-success mb-3">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="{{ url('/mapa') }}">SaludCerca</a>
-        <a class="btn btn-light btn-sm" href="{{ url('/mapa') }}">&larr; Volver al mapa</a>
-    </div>
-</nav>
+@include('partials.navbar')
 
 <div class="container pb-4">
     @if (session('ok'))
@@ -68,6 +63,18 @@
             @endauth
         </div>
     </div>
+
+    @if ($e->fotos->count())
+    <div class="row g-2 mb-3">
+        @foreach ($e->fotos as $f)
+            <div class="col-6 col-md-3">
+                <a href="{{ asset('storage/' . $f->ruta) }}" target="_blank">
+                    <img src="{{ asset('storage/' . $f->ruta) }}" class="img-fluid rounded shadow-sm" style="height:140px;width:100%;object-fit:cover" alt="Foto de {{ $e->nombre }}">
+                </a>
+            </div>
+        @endforeach
+    </div>
+    @endif
 
     <div class="row g-3">
         <div class="col-md-6">

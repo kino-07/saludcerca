@@ -13,19 +13,7 @@
     </style>
 </head>
 <body class="bg-light">
-<nav class="navbar navbar-dark bg-success mb-3">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="{{ url('/mapa') }}">SaludCerca</a>
-        <div>
-            @auth
-                <a class="btn btn-light btn-sm" href="{{ url('/dashboard') }}">Mi panel</a>
-            @else
-                <a class="btn btn-outline-light btn-sm" href="{{ route('login') }}">Ingresar</a>
-                <a class="btn btn-light btn-sm" href="{{ route('register') }}">Registrarme</a>
-            @endauth
-        </div>
-    </div>
-</nav>
+@include('partials.navbar')
 
 <div class="container-fluid">
     <div class="row g-2 mb-3">
@@ -63,6 +51,15 @@
                 @endforeach
             </select>
         </div>
+        <div class="col-md-3">
+            <select id="orden" class="form-select form-select-sm">
+                <option value="cerca">Ordenar: más cercano primero</option>
+                <option value="lejos">Más lejano primero</option>
+                <option value="az">Nombre A → Z</option>
+                <option value="za">Nombre Z → A</option>
+                <option value="abiertos">Abiertos primero</option>
+            </select>
+        </div>
         <div class="col-auto form-check ms-2">
             <input class="form-check-input" type="checkbox" id="abierto">
             <label class="form-check-label" for="abierto">Abierto ahora</label>
@@ -72,7 +69,8 @@
             <label class="form-check-label" for="de_turno">De turno</label>
         </div>
     </div>
-    <div id="aviso" class="small text-muted mb-2"></div>
+    <div id="aviso" class="small text-muted mb-1"></div>
+    <div id="contador" class="small fw-bold text-success mb-2"></div>
 
     <div class="row g-3">
         <div class="col-lg-8"><div id="map"></div></div>
@@ -116,12 +114,22 @@
     function popup(e) {
         var ruta = 'https://www.google.com/maps/dir/?api=1&origin=' + pos.lat + ',' + pos.lng +
                    '&destination=' + e.lat + ',' + e.lng;
-        return '<strong>' + esc(e.nombre) + '</strong><br>' + etiquetas(e) +
+        return (e.foto ? '<img src="' + esc(e.foto) + '" style="width:100%;max-width:200px;border-radius:6px;margin-bottom:4px"><br>' : '') +
+               '<strong>' + esc(e.nombre) + '</strong><br>' + etiquetas(e) +
                '<br>' + esc(e.direccion) +
                (e.telefono ? '<br>Tel: ' + esc(e.telefono) : '') +
                '<br>A ' + e.distancia_km + ' km' +
                '<br><a href="' + URL_FICHA + e.id + '">Ver ficha</a> · ' +
                '<a href="' + ruta + '" target="_blank">Cómo llegar</a>';
+    }
+
+    function ordenar(d) {
+        var o = document.getElementById('orden').value;
+        if (o === 'lejos') d.sort(function (a, b) { return b.distancia_km - a.distancia_km; });
+        else if (o === 'az') d.sort(function (a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+        else if (o === 'za') d.sort(function (a, b) { return b.nombre.localeCompare(a.nombre, 'es'); });
+        else if (o === 'abiertos') d.sort(function (a, b) { return (b.abierto ? 1 : 0) - (a.abierto ? 1 : 0) || a.distancia_km - b.distancia_km; });
+        return d;
     }
 
     function buscar() {
@@ -137,10 +145,12 @@
         fetch(URL_API + '?' + params.toString())
             .then(function (r) { return r.json(); })
             .then(function (datos) {
+                datos = ordenar(datos);
                 capa.clearLayers();
                 marcadores = {};
                 var lista = document.getElementById('lista');
                 lista.innerHTML = '';
+                document.getElementById('contador').textContent = datos.length + (datos.length === 1 ? ' resultado' : ' resultados');
                 if (datos.length === 0) {
                     lista.innerHTML = '<div class="list-group-item">Sin resultados.</div>';
                     return;
@@ -189,7 +199,7 @@
     document.getElementById('q').addEventListener('keydown', function (ev) {
         if (ev.key === 'Enter') buscar();
     });
-    ['tipo', 'tipo_centro', 'servicio', 'abierto', 'de_turno'].forEach(function (id) {
+    ['tipo', 'tipo_centro', 'servicio', 'abierto', 'de_turno', 'orden'].forEach(function (id) {
         document.getElementById(id).onchange = buscar;
     });
 

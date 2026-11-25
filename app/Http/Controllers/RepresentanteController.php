@@ -13,24 +13,16 @@ class RepresentanteController extends Controller
 {
     private const DIAS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 
-    // Redirige a cada usuario a su panel según el rol (después del login)
+    // Redirige a cada usuario a su panel según el rol
     public function panel(): RedirectResponse
     {
         $rol = auth()->user()->rol ?? 'ciudadano';
 
-        if ($rol === 'representante') {
-            return redirect()->route('representante.index');
-        }
-
-        if ($rol === 'administrador') {
-            return redirect()->route('admin.index');
-        }
-
-        if ($rol === 'ciudadano') {
-            return redirect()->route('ciudadano.index');
-        }
-
-        return redirect()->route('mapa');
+        return match ($rol) {
+            'representante' => redirect()->route('representante.index'),
+            'administrador' => redirect()->route('admin.index'),
+            default => redirect()->route('ciudadano.index'),
+        };
     }
 
     private function soloRepresentante(): void
@@ -44,55 +36,25 @@ class RepresentanteController extends Controller
         abort_unless($e->representante_id === auth()->id(), 403, 'Este establecimiento no es tuyo.');
     }
 
+    // Solo ve los establecimientos que el administrador le asignó
     public function index()
     {
         $this->soloRepresentante();
-        $lista = Establecimiento::where('representante_id', auth()->id())->orderBy('nombre')->get();
+        $orden = request('orden', 'nombre_asc');
+        $lista = Establecimiento::with(['turnos', 'horarios'])
+            ->where('representante_id', auth()->id())
+            ->when($orden === 'nombre_desc', fn ($q) => $q->orderByDesc('nombre'))
+            ->when($orden === 'estado', fn ($q) => $q->orderBy('estado')->orderBy('nombre'))
+            ->when(!in_array($orden, ['nombre_desc', 'estado']), fn ($q) => $q->orderBy('nombre'))
+            ->get();
 
-        return view('representante.index', ['lista' => $lista]);
-    }
-
-    public function create()
-    {
-        $this->soloRepresentante();
-
-        return view('representante.create');
-    }
-
-    private function reglas(): array
-    {
-        return [
-            'tipo' => 'required|in:farmacia,centro_salud',
-            'tipo_centro' => 'nullable|in:hospital,clinica,centro_de_salud',
-            'nombre' => 'required|string|max:150',
-            'direccion' => 'required|string|max:255',
-            'telefono' => 'nullable|string|max:30',
-            'latitud' => 'required|numeric|between:-90,90',
-            'longitud' => 'required|numeric|between:-180,180',
-        ];
-    }
-
-    public function store(Request $request): RedirectResponse
-    {
-        $this->soloRepresentante();
-        $datos = $request->validate($this->reglas());
-        if ($datos['tipo'] === 'farmacia') {
-            $datos['tipo_centro'] = null;
-        }
-
-        $e = Establecimiento::create($datos + [
-            'representante_id' => auth()->id(),
-            'estado' => 'pendiente_validacion', // el administrador lo valida
-        ]);
-
-        return redirect()->route('representante.gestionar', $e)
-            ->with('ok', 'Establecimiento registrado. Quedó pendiente de validación del administrador.');
+        return view('representante.index', ['lista' => $lista, 'orden' => $orden]);
     }
 
     public function gestionar(Establecimiento $establecimiento)
     {
         $this->propio($establecimiento);
-        $establecimiento->load(['horarios', 'turnos', 'servicios']);
+        $establecimiento->load(['horarios', 'turnos', 'servicios', 'fotos']);
 
         $horarios = [];
         foreach (self::DIAS as $d) {
@@ -104,21 +66,31 @@ class RepresentanteController extends Controller
             'dias' => self::DIAS,
             'horarios' => $horarios,
             'servicios' => Servicio::orderBy('nombre')->get(),
-            'turnos' => $establecimiento->turnos->sortByDesc('fecha_inicio'),
+            'turnos' => request('turnos') === 'asc'
+                ? $establecimiento->turnos->sortBy('fecha_inicio')
+                : $establecimiento->turnos->sortByDesc('fecha_inicio'),
+            'hoy' => now('America/La_Paz')->toDateString(),
         ]);
     }
 
+    // El representante solo cambia teléfono y servicios (el resto lo define el administrador)
     public function actualizarDatos(Request $request, Establecimiento $establecimiento): RedirectResponse
     {
         $this->propio($establecimiento);
-        $datos = $request->validate($this->reglas());
-        if ($datos['tipo'] === 'farmacia') {
-            $datos['tipo_centro'] = null;
-        }
-        $establecimiento->update($datos);
-        $establecimiento->servicios()->sync($request->input('servicios', []));
 
-        return back()->with('ok', 'Datos y servicios actualizados.');
+        $request->merge(['telefono' => preg_replace('/\D/', '', (string) $request->input('telefono', ''))]);
+        $v = $request->validate([
+            'telefono' => ['nullable', 'regex:/^[0-9]{7,8}$/'],
+            'servicios' => 'nullable|array',
+            'servicios.*' => 'exists:servicios,id',
+        ], [
+            'telefono.regex' => 'El teléfono debe tener solo números (7 u 8 dígitos).',
+        ]);
+
+        $establecimiento->update(['telefono' => ($v['telefono'] ?? '') !== '' ? $v['telefono'] : null]);
+        $establecimiento->servicios()->sync($v['servicios'] ?? []);
+
+        return back()->with('ok', 'Teléfono y servicios actualizados.');
     }
 
     public function guardarHorarios(Request $request, Establecimiento $establecimiento): RedirectResponse
@@ -157,14 +129,15 @@ class RepresentanteController extends Controller
         $this->propio($establecimiento);
         abort_unless($establecimiento->tipo === 'farmacia', 403, 'Solo las farmacias tienen turnos.');
 
+        $hoy = now('America/La_Paz')->toDateString();
         $v = $request->validate([
-            'fecha_inicio' => 'required|date',
-            'fecha_fin' => 'required|date|after_or_equal:fecha_inicio',
+            'fecha_inicio' => ['required', 'date', 'after_or_equal:' . $hoy],
+            'fecha_fin' => ['required', 'date', 'after_or_equal:fecha_inicio'],
         ], [
+            'fecha_inicio.after_or_equal' => 'No se pueden registrar fechas pasadas: el turno debe comenzar hoy o después.',
             'fecha_fin.after_or_equal' => 'La fecha de fin no puede ser anterior a la de inicio.',
         ]);
 
-        // No se permiten turnos que se solapen
         $solapa = $establecimiento->turnos()
             ->where('fecha_inicio', '<=', $v['fecha_fin'])
             ->where('fecha_fin', '>=', $v['fecha_inicio'])
